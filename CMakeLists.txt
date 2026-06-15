@@ -11,6 +11,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(MYLIB_BUILD_SHARED     "Build shared library (mylib.dll for Excel / ctypes)" ON)
 option(MYLIB_BUILD_PYTHON     "Build Python module via pybind11 (set OFF for pure C++ XLL builds)" OFF)
 option(MYLIB_USE_EIGEN        "Fetch and use Eigen (highly recommended)" ON)
+option(MYLIB_USE_BOOST        "Use Boost (Sobol quasi-random via boost-random)" OFF)
+option(MYLIB_USE_QUANTLIB     "Use QuantLib (yield curves; requires Boost)" OFF)
 option(MYLIB_BUILD_TESTS      "Build unit tests" OFF)
 
 # ------------------------------------------------------------------
@@ -39,13 +41,46 @@ if(MYLIB_USE_EIGEN)
 endif()
 
 # ------------------------------------------------------------------
+# Boost (header-only Sobol via boost-random; also required by QuantLib)
+# ------------------------------------------------------------------
+if(MYLIB_USE_BOOST OR MYLIB_USE_QUANTLIB)
+    find_package(Boost REQUIRED CONFIG COMPONENTS random)
+    target_link_libraries(mylib_core INTERFACE Boost::random)
+    target_compile_definitions(mylib_core INTERFACE MYLIB_HAS_BOOST)
+    message(STATUS "Boost enabled for mylib")
+endif()
+
+# ------------------------------------------------------------------
+# QuantLib (yield curves)
+# ------------------------------------------------------------------
+if(MYLIB_USE_QUANTLIB)
+    if(NOT MYLIB_USE_BOOST)
+        message(FATAL_ERROR "MYLIB_USE_QUANTLIB requires MYLIB_USE_BOOST")
+    endif()
+    find_package(QuantLib REQUIRED CONFIG)
+    target_link_libraries(mylib_core INTERFACE QuantLib::QuantLib)
+    target_compile_definitions(mylib_core INTERFACE MYLIB_HAS_QUANTLIB)
+    message(STATUS "QuantLib enabled for mylib")
+endif()
+
+# ------------------------------------------------------------------
 # Implementation library (static) - contains all the actual code
 # ------------------------------------------------------------------
-add_library(mylib_impl STATIC
+set(MYLIB_IMPL_SOURCES
     src/mylib.cpp
     src/random/prng.cpp
     src/random/sobol.cpp
 )
+
+if(MYLIB_USE_BOOST)
+    list(APPEND MYLIB_IMPL_SOURCES src/random/boost_sobol.cpp)
+endif()
+
+if(MYLIB_USE_QUANTLIB)
+    list(APPEND MYLIB_IMPL_SOURCES src/finance/yield_curve.cpp)
+endif()
+
+add_library(mylib_impl STATIC ${MYLIB_IMPL_SOURCES})
 target_link_libraries(mylib_impl PUBLIC mylib_core)
 target_compile_definitions(mylib_impl PUBLIC MYLIB_STATIC)
 

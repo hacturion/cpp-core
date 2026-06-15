@@ -87,6 +87,55 @@ MYLIB_API int mylib_matrix_multiply(
 );
 
 // ============================================================================
+// Quasi-Monte Carlo (Boost Sobol when MYLIB_HAS_BOOST is defined)
+// ============================================================================
+
+// Generate n_points Sobol points in [0,1)^dimension (row-major: point i at out[i*dim + d]).
+// skip advances the sequence before generation (useful for parallel streams).
+// Returns 0 on success; negative on error (-4 if Boost was not linked).
+MYLIB_API int mylib_sobol_points(
+    int dimension,
+    int n_points,
+    unsigned long long skip,
+    double* out
+);
+
+// ============================================================================
+// Yield curves (QuantLib when MYLIB_HAS_QUANTLIB is defined)
+// ============================================================================
+
+// Pillars are tenors in years; zero_rates are continuously-compounded annual rates (decimal).
+// Linear interpolation in zero rates (Actual/Actual ISDA day count).
+
+// Discount factor DF(t) for a single maturity t (years).
+MYLIB_API int mylib_zero_curve_discount(
+    double t,
+    const double* tenors,
+    const double* zero_rates,
+    int n_pillars,
+    double* df_out
+);
+
+// Discount factors for multiple maturities.
+MYLIB_API int mylib_zero_curve_discounts(
+    const double* times,
+    int n_times,
+    const double* tenors,
+    const double* zero_rates,
+    int n_pillars,
+    double* dfs_out
+);
+
+// Zero rate (continuous, annual) at maturity t (years).
+MYLIB_API int mylib_zero_curve_rate(
+    double t,
+    const double* tenors,
+    const double* zero_rates,
+    int n_pillars,
+    double* rate_out
+);
+
+// ============================================================================
 // Stateful context (example pattern - will be replaced by proper classes later)
 // ============================================================================
 typedef struct MyLibHandle_* MyLibHandle;

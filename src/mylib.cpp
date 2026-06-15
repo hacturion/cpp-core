@@ -25,7 +25,13 @@
 // Library version
 // ============================================================================
 extern "C" const char* mylib_version(void) {
+#if defined(MYLIB_HAS_QUANTLIB) && defined(MYLIB_HAS_BOOST)
+    return "mylib 0.3.0 (Eigen + Boost Sobol + QuantLib curves)";
+#elif defined(MYLIB_HAS_BOOST)
+    return "mylib 0.3.0 (Eigen + Boost Sobol)";
+#else
     return "mylib 0.2.0 (numerical methods core)";
+#endif
 }
 
 // ============================================================================
