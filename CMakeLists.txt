@@ -70,10 +70,13 @@ set(MYLIB_IMPL_SOURCES
     src/mylib.cpp
     src/random/prng.cpp
     src/random/sobol.cpp
+    src/interpolation/tension_spline.cpp
 )
 
 if(MYLIB_USE_BOOST)
-    list(APPEND MYLIB_IMPL_SOURCES src/random/boost_sobol.cpp)
+    list(APPEND MYLIB_IMPL_SOURCES
+        src/random/boost_sobol.cpp
+    )
 endif()
 
 if(MYLIB_USE_QUANTLIB)

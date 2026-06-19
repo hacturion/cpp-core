@@ -15,6 +15,7 @@
 
 #ifdef MYLIB_HAS_EIGEN
 #include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
 #endif
 
 #ifdef _WIN32
@@ -178,6 +179,238 @@ extern "C" int mylib_matrix_multiply(
 
     return 0;
 }
+
+extern "C" int mylib_matrix_inverse(
+    const double* matrix,
+    int n,
+    double* result
+) {
+    if (!matrix || !result || n <= 0) return -1;
+
+#ifdef MYLIB_HAS_EIGEN
+    using RowMat = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+    Eigen::Map<const RowMat> matA(matrix, n, n);
+    const Eigen::FullPivLU<RowMat> lu(matA);
+    if (!lu.isInvertible()) return -3;
+
+    Eigen::Map<RowMat> matInv(result, n, n);
+    matInv = lu.inverse();
+#else
+    (void)matrix;
+    (void)n;
+    (void)result;
+    return -4;
+#endif
+
+    return 0;
+}
+
+#ifdef MYLIB_HAS_EIGEN
+
+namespace {
+
+using SymRowMat = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+constexpr double kSymmetryRelTol = 1e-10;
+
+int SymmetryMetricsMapped(
+    const double* matrix,
+    int n,
+    double* max_asymmetry_out,
+    double* tolerance_out
+) {
+    Eigen::Map<const SymRowMat> input(matrix, n, n);
+    const double scale = std::max(1.0, input.cwiseAbs().maxCoeff());
+    const double tol = kSymmetryRelTol * scale;
+    double max_asym = 0.0;
+
+    for (int i = 0; i < n; ++i) {
+        for (int j = i + 1; j < n; ++j) {
+            max_asym = std::max(max_asym, std::abs(input(i, j) - input(j, i)));
+        }
+    }
+
+    if (max_asymmetry_out) *max_asymmetry_out = max_asym;
+    if (tolerance_out) *tolerance_out = tol;
+    return max_asym <= tol ? 0 : -2;
+}
+
+int CorrelationMetricsMapped(
+    const double* matrix,
+    int n,
+    double* max_diag_deviation_out,
+    double* min_offdiag_out,
+    double* max_offdiag_out,
+    double* tolerance_out
+) {
+    Eigen::Map<const SymRowMat> input(matrix, n, n);
+    const double scale = std::max(1.0, input.cwiseAbs().maxCoeff());
+    const double tol = kSymmetryRelTol * scale;
+    double max_diag_dev = 0.0;
+    double min_offdiag = 0.0;
+    double max_offdiag = 0.0;
+    bool has_offdiag = false;
+
+    for (int i = 0; i < n; ++i) {
+        max_diag_dev = std::max(max_diag_dev, std::abs(input(i, i) - 1.0));
+        for (int j = 0; j < n; ++j) {
+            if (i != j) {
+                const double v = input(i, j);
+                if (!has_offdiag) {
+                    min_offdiag = max_offdiag = v;
+                    has_offdiag = true;
+                } else {
+                    min_offdiag = std::min(min_offdiag, v);
+                    max_offdiag = std::max(max_offdiag, v);
+                }
+            }
+        }
+    }
+
+    if (max_diag_deviation_out) *max_diag_deviation_out = max_diag_dev;
+    if (min_offdiag_out) *min_offdiag_out = min_offdiag;
+    if (max_offdiag_out) *max_offdiag_out = max_offdiag;
+    if (tolerance_out) *tolerance_out = tol;
+
+    const bool unit_diag = max_diag_dev <= tol;
+    const bool valid_offdiag =
+        !has_offdiag || (min_offdiag >= -1.0 - tol && max_offdiag <= 1.0 + tol);
+    return (unit_diag && valid_offdiag) ? 0 : -5;
+}
+
+} // namespace
+
+extern "C" int mylib_matrix_symmetry_metrics(
+    const double* matrix,
+    int n,
+    double* max_asymmetry_out,
+    double* tolerance_out
+) {
+    if (!matrix || n <= 0 || !max_asymmetry_out || !tolerance_out) return -1;
+    return SymmetryMetricsMapped(matrix, n, max_asymmetry_out, tolerance_out);
+}
+
+extern "C" int mylib_matrix_correlation_metrics(
+    const double* matrix,
+    int n,
+    double* max_diag_deviation_out,
+    double* min_offdiag_out,
+    double* max_offdiag_out,
+    double* tolerance_out
+) {
+    if (!matrix || n <= 0 || !max_diag_deviation_out || !min_offdiag_out || !max_offdiag_out ||
+        !tolerance_out) {
+        return -1;
+    }
+    return CorrelationMetricsMapped(
+        matrix,
+        n,
+        max_diag_deviation_out,
+        min_offdiag_out,
+        max_offdiag_out,
+        tolerance_out);
+}
+
+extern "C" int mylib_symmetric_eigenvalues(
+    const double* matrix,
+    int n,
+    double* eigenvalues_out
+) {
+    if (!matrix || !eigenvalues_out || n <= 0) return -1;
+    if (SymmetryMetricsMapped(matrix, n, nullptr, nullptr) != 0) return -2;
+
+    Eigen::Map<const SymRowMat> input(matrix, n, n);
+    Eigen::SelfAdjointEigenSolver<SymRowMat> solver;
+    solver.compute(input, Eigen::EigenvaluesOnly);
+    if (solver.info() != Eigen::Success) return -3;
+
+    Eigen::Map<Eigen::VectorXd> out(eigenvalues_out, n);
+    out = solver.eigenvalues();
+    return 0;
+}
+
+extern "C" int mylib_symmetric_eigenvectors(
+    const double* matrix,
+    int n,
+    double* eigenvectors_out
+) {
+    if (!matrix || !eigenvectors_out || n <= 0) return -1;
+    if (SymmetryMetricsMapped(matrix, n, nullptr, nullptr) != 0) return -2;
+
+    Eigen::Map<const SymRowMat> input(matrix, n, n);
+    Eigen::SelfAdjointEigenSolver<SymRowMat> solver(input);
+    if (solver.info() != Eigen::Success) return -3;
+
+    Eigen::Map<SymRowMat> out(eigenvectors_out, n, n);
+    out = solver.eigenvectors();
+    return 0;
+}
+
+extern "C" int mylib_cholesky_decomposition(
+    const double* matrix,
+    int n,
+    double* cholesky_out
+) {
+    if (!matrix || !cholesky_out || n <= 0) return -1;
+    if (SymmetryMetricsMapped(matrix, n, nullptr, nullptr) != 0) return -2;
+    if (CorrelationMetricsMapped(matrix, n, nullptr, nullptr, nullptr, nullptr) != 0) return -5;
+
+    Eigen::Map<const SymRowMat> input(matrix, n, n);
+    const Eigen::LLT<SymRowMat> llt(input);
+    if (llt.info() != Eigen::Success) return -3;
+
+    Eigen::Map<SymRowMat> out(cholesky_out, n, n);
+    out = llt.matrixL();
+    return 0;
+}
+
+#else
+
+extern "C" int mylib_matrix_symmetry_metrics(
+    const double* /*matrix*/,
+    int /*n*/,
+    double* /*max_asymmetry_out*/,
+    double* /*tolerance_out*/
+) {
+    return -4;
+}
+
+extern "C" int mylib_matrix_correlation_metrics(
+    const double* /*matrix*/,
+    int /*n*/,
+    double* /*max_diag_deviation_out*/,
+    double* /*min_offdiag_out*/,
+    double* /*max_offdiag_out*/,
+    double* /*tolerance_out*/
+) {
+    return -4;
+}
+
+extern "C" int mylib_symmetric_eigenvalues(
+    const double* /*matrix*/,
+    int /*n*/,
+    double* /*eigenvalues_out*/
+) {
+    return -4;
+}
+
+extern "C" int mylib_symmetric_eigenvectors(
+    const double* /*matrix*/,
+    int /*n*/,
+    double* /*eigenvectors_out*/
+) {
+    return -4;
+}
+
+extern "C" int mylib_cholesky_decomposition(
+    const double* /*matrix*/,
+    int /*n*/,
+    double* /*cholesky_out*/
+) {
+    return -4;
+}
+
+#endif
 
 // Opaque handle implementation (simple growing buffer + running stats)
 struct MyLibHandle_ {

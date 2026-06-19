@@ -86,6 +86,83 @@ MYLIB_API int mylib_matrix_multiply(
     double* result
 );
 
+// Matrix inverse for square n×n row-major A. Output is row-major A^{-1}.
+// Returns 0 on success; -3 if singular/non-invertible; -4 if Eigen was not linked.
+MYLIB_API int mylib_matrix_inverse(
+    const double* matrix,
+    int n,
+    double* result
+);
+
+// Symmetry check for n×n row-major matrix.
+// Writes max_{i<j} |A_ij - A_ji| and the tolerance used (1e-10 * max(1, max|A|)).
+// Returns 0 if symmetric within tolerance, -2 if not, -4 if Eigen was not linked.
+MYLIB_API int mylib_matrix_symmetry_metrics(
+    const double* matrix,
+    int n,
+    double* max_asymmetry_out,
+    double* tolerance_out
+);
+
+// Symmetric eigendecomposition (Eigen SelfAdjointEigenSolver when MYLIB_HAS_EIGEN).
+// Input must be n×n row-major and symmetric (A = A'); non-symmetric matrices are rejected.
+// Eigenvalues are real and returned in ascending order (n×1).
+// Eigenvectors are orthonormal columns V; output is row-major n×n with V(:,j) in column j.
+// Returns 0 on success; -2 if not symmetric; -3 if solver failed; -4 if Eigen was not linked.
+MYLIB_API int mylib_symmetric_eigenvalues(
+    const double* matrix,
+    int n,
+    double* eigenvalues_out
+);
+
+MYLIB_API int mylib_symmetric_eigenvectors(
+    const double* matrix,
+    int n,
+    double* eigenvectors_out
+);
+
+// Correlation matrix check for n×n row-major matrix.
+// Requires unit diagonal and off-diagonal entries in [-1, 1] (within tolerance).
+// Writes max |diag_i - 1|, min/max off-diagonal A_ij (i != j), and tolerance (1e-10 * max(1, max|A|)).
+// Returns 0 if valid; -5 if not a correlation matrix; -4 if Eigen was not linked.
+MYLIB_API int mylib_matrix_correlation_metrics(
+    const double* matrix,
+    int n,
+    double* max_diag_deviation_out,
+    double* min_offdiag_out,
+    double* max_offdiag_out,
+    double* tolerance_out
+);
+
+// Cholesky decomposition A = L L' for n×n row-major correlation matrix A.
+// Output is lower triangular L (row-major); upper triangle is zero.
+// Returns 0 on success; -2 if not symmetric; -5 if not a correlation matrix;
+// -3 if not positive definite; -4 if Eigen was not linked.
+MYLIB_API int mylib_cholesky_decomposition(
+    const double* matrix,
+    int n,
+    double* cholesky_out
+);
+
+// ============================================================================
+// Interpolation
+// ============================================================================
+
+// Hyperbolic tension spline on strictly increasing knots (t[i], y[i]).
+// tau > 0 controls tension (larger = straighter segments between knots).
+// Evaluates at each query_x[j]; results written to result_out (length n_query).
+// Requires n >= 2; query points must lie in [t[0], t[n-1]].
+// Returns 0 on success; -1 bad args; -2 invalid knots/values/tau; -3 singular system; -5 query out of range.
+MYLIB_API int mylib_tension_spline(
+    const double* t,
+    const double* y,
+    int n,
+    double tau,
+    const double* query_x,
+    int n_query,
+    double* result_out
+);
+
 // ============================================================================
 // Quasi-Monte Carlo (Boost Sobol when MYLIB_HAS_BOOST is defined)
 // ============================================================================
