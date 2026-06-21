@@ -80,7 +80,11 @@ if(MYLIB_USE_BOOST)
 endif()
 
 if(MYLIB_USE_QUANTLIB)
-    list(APPEND MYLIB_IMPL_SOURCES src/finance/yield_curve.cpp)
+    list(APPEND MYLIB_IMPL_SOURCES
+        src/finance/yield_curve.cpp
+        src/finance/cds.cpp
+        src/finance/equity_derivatives.cpp
+    )
 endif()
 
 add_library(mylib_impl STATIC ${MYLIB_IMPL_SOURCES})

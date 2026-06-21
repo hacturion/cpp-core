@@ -184,32 +184,181 @@ MYLIB_API int mylib_sobol_points(
 // Pillars are tenors in years; zero_rates are continuously-compounded annual rates (decimal).
 // Linear interpolation in zero rates (Actual/Actual ISDA day count).
 
-// Discount factor DF(t) for a single maturity t (years).
-MYLIB_API int mylib_zero_curve_discount(
-    double t,
+// Build and cache a zero curve; writes an ASCII id (e.g. ZC-00000001) to id_out.
+// Use the id with mylib_zero_curve_discount / discounts / rate without re-building.
+// Returns 0 on success; -1 bad args; -2 invalid pillars; -3 cache failed; -4 if QuantLib not linked.
+MYLIB_API int mylib_zero_curve_create(
     const double* tenors,
     const double* zero_rates,
     int n_pillars,
+    char* id_out,
+    int id_cap
+);
+
+// Discount factor DF(t) for a cached zero curve id.
+MYLIB_API int mylib_zero_curve_discount(
+    const char* curve_id,
+    double t,
     double* df_out
 );
 
-// Discount factors for multiple maturities.
+// Discount factors for multiple maturities on a cached zero curve id.
 MYLIB_API int mylib_zero_curve_discounts(
+    const char* curve_id,
     const double* times,
     int n_times,
-    const double* tenors,
-    const double* zero_rates,
-    int n_pillars,
     double* dfs_out
 );
 
-// Zero rate (continuous, annual) at maturity t (years).
+// Zero rate (continuous, annual) at maturity t on a cached zero curve id.
 MYLIB_API int mylib_zero_curve_rate(
+    const char* curve_id,
     double t,
-    const double* tenors,
-    const double* zero_rates,
-    int n_pillars,
     double* rate_out
+);
+
+// Release one cached zero curve (-5 if id not found).
+MYLIB_API int mylib_zero_curve_release(const char* curve_id);
+
+// Release all cached zero curves.
+MYLIB_API void mylib_zero_curve_release_all(void);
+
+// ============================================================================
+// CDS (QuantLib when MYLIB_HAS_QUANTLIB is defined)
+// ============================================================================
+
+// Build and cache a CDS hazard curve; writes an ASCII id (e.g. CDS-00000001) to id_out.
+// Use the id with mylib_cds_curve_survival / mylib_cds_curve_npv without re-bootstrapping.
+// Returns 0 on success; -1 bad args; -2 invalid market data; -3 cache/bootstrap failed;
+// -4 if QuantLib not linked.
+MYLIB_API int mylib_cds_curve_create(
+    const double* cds_tenors,
+    const double* cds_spreads,
+    int n_cds,
+    double recovery_rate,
+    const char* disc_curve_id,
+    char* id_out,
+    int id_cap
+);
+
+// Hazard rates from a cached curve id.
+MYLIB_API int mylib_cds_curve_hazard(
+    const char* curve_id,
+    double* hazard_times_out,
+    double* hazard_rates_out,
+    int max_n,
+    int* n_out
+);
+
+// Survival probabilities from a cached curve id.
+MYLIB_API int mylib_cds_curve_survival(
+    const char* curve_id,
+    const double* query_times,
+    int n_query,
+    double* survival_out
+);
+
+// NPV from a cached curve id. side=1 protection buyer, side=-1 protection seller.
+MYLIB_API int mylib_cds_curve_npv(
+    const char* curve_id,
+    double maturity_years,
+    double running_spread,
+    double notional,
+    int side,
+    double* npv_out,
+    double* fair_spread_out
+);
+
+// Release one cached curve (-5 if id not found).
+MYLIB_API int mylib_cds_curve_release(const char* curve_id);
+
+// Release all cached CDS curves.
+MYLIB_API void mylib_cds_curve_release_all(void);
+
+// Stateless bootstrap (no cache). Writes pillar times and hazard rates (length n_cds each).
+// Returns 0 on success; -1 bad args; -2 invalid market data; -3 bootstrap failed; -4 if QuantLib not linked.
+MYLIB_API int mylib_cds_bootstrap_curve(
+    const double* cds_tenors,
+    const double* cds_spreads,
+    int n_cds,
+    double recovery_rate,
+    const double* disc_tenors,
+    const double* disc_rates,
+    int n_disc,
+    double* hazard_times_out,
+    double* hazard_rates_out
+);
+
+// Survival probabilities on the bootstrapped CDS curve.
+MYLIB_API int mylib_cds_survival_probs(
+    const double* cds_tenors,
+    const double* cds_spreads,
+    int n_cds,
+    double recovery_rate,
+    const double* disc_tenors,
+    const double* disc_rates,
+    int n_disc,
+    const double* query_times,
+    int n_query,
+    double* survival_out
+);
+
+// NPV of a CDS contract. side=1 protection buyer, side=-1 protection seller.
+// Maturity in years; running_spread decimal; notional > 0.
+// Market CDS pillars are used to bootstrap the credit curve before pricing.
+// fair_spread_out may be NULL; when set, receives the running spread with NPV=0.
+MYLIB_API int mylib_cds_npv(
+    double maturity_years,
+    double running_spread,
+    double notional,
+    int side,
+    double recovery_rate,
+    const double* cds_tenors,
+    const double* cds_spreads,
+    int n_cds,
+    const double* disc_tenors,
+    const double* disc_rates,
+    int n_disc,
+    double* npv_out,
+    double* fair_spread_out
+);
+
+// ============================================================================
+// Equity derivatives (QuantLib when MYLIB_HAS_QUANTLIB is defined)
+// ============================================================================
+
+// European equity option (Black-Scholes-Merton).
+// option_type: 1 = call, -1 = put. dividend_yield is continuous (decimal).
+// disc_curve_id is a cached ZC-... id from mylib_zero_curve_create.
+// Returns 0 on success; -1 bad args; -2 invalid market data; -3 pricing failed;
+// -4 if QuantLib not linked; -5 unknown curve id.
+MYLIB_API int mylib_equity_option_npv(
+    double spot,
+    double strike,
+    double volatility,
+    double maturity_years,
+    const char* disc_curve_id,
+    int option_type,
+    double dividend_yield,
+    double* npv_out
+);
+
+// Convertible fixed-coupon bond (semiannual coupons, binomial TF lattice).
+// coupon_rate is annual decimal; conversion_ratio is shares per bond face;
+// credit_spread is a continuous spread over risk-free (decimal).
+// Returns 0 on success; -1 bad args; -2 invalid market data; -3 pricing failed;
+// -4 if QuantLib not linked; -5 unknown curve id.
+MYLIB_API int mylib_convertible_bond_npv(
+    double spot,
+    double face_value,
+    double coupon_rate,
+    double maturity_years,
+    double conversion_ratio,
+    double volatility,
+    double credit_spread,
+    const char* disc_curve_id,
+    double dividend_yield,
+    double* npv_out
 );
 
 // ============================================================================
